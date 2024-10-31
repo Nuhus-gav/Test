@@ -1,0 +1,85 @@
+Yes, it’s definitely possible to create a script that monitors Snowflake region availability and triggers a failover for an Azure storage account if necessary. Here’s a general approach to build this:
+
+1. **Check Snowflake Region Availability**:
+   - Snowflake provides region-specific endpoints, so you could use a health check or monitoring request to determine if the primary Snowflake region is available.
+   - This could be achieved using Snowflake's `SHOW REPLICAS` SQL command to verify replication states or by setting up a query that checks region availability.
+   - Alternatively, you can monitor the availability by checking for errors specific to region connectivity, possibly set up in a monitoring tool.
+
+2. **Failover the Azure Storage Account**:
+   - In Azure, if you have a storage account configured for **geo-redundancy (RA-GRS or GZRS)**, you can programmatically fail over from the primary region to the secondary.
+   - You can use Azure SDK for Python (or CLI) to initiate the failover. Specifically, the `az storage account failover` command or `StorageManagementClient` from the Azure SDK can trigger this.
+
+3. **Automation Flow**:
+   - A periodic check (e.g., every few minutes) can be run to assess Snowflake region availability.
+   - If it detects an issue, the script initiates a failover for the Azure storage account.
+   - Once Snowflake’s primary region is back online, you can decide to fail back (if necessary).
+
+Here’s a sample script that checks the Snowflake region and triggers failover for Azure storage:
+
+### Sample Python Script
+
+```python
+import snowflake.connector
+from azure.identity import DefaultAzureCredential
+from azure.mgmt.storage import StorageManagementClient
+import time
+
+# Azure configuration
+subscription_id = "YOUR_SUBSCRIPTION_ID"
+resource_group_name = "YOUR_RESOURCE_GROUP_NAME"
+storage_account_name = "YOUR_STORAGE_ACCOUNT_NAME"
+
+# Snowflake configuration
+sf_account = "YOUR_SNOWFLAKE_ACCOUNT"
+sf_user = "YOUR_SNOWFLAKE_USER"
+sf_password = "YOUR_SNOWFLAKE_PASSWORD"
+
+# Create an Azure client
+credential = DefaultAzureCredential()
+storage_client = StorageManagementClient(credential, subscription_id)
+
+def check_snowflake_region_availability():
+    try:
+        # Connect to Snowflake
+        conn = snowflake.connector.connect(
+            account=sf_account,
+            user=sf_user,
+            password=sf_password,
+            warehouse='COMPUTE_WH'
+        )
+        
+        # Check for region availability
+        conn.cursor().execute("SHOW REPLICAS")  # Custom query or health check
+        print("Snowflake primary region is available.")
+        return True
+    except Exception as e:
+        print("Snowflake primary region check failed:", e)
+        return False
+    finally:
+        conn.close()
+
+def failover_azure_storage():
+    print("Failing over Azure Storage account to secondary region...")
+    storage_client.storage_accounts.begin_failover(
+        resource_group_name, 
+        storage_account_name
+    )
+    print("Failover initiated.")
+
+# Main loop to monitor and trigger failover
+while True:
+    if not check_snowflake_region_availability():
+        failover_azure_storage()
+    else:
+        print("No failover needed.")
+    
+    # Sleep for a defined interval before re-checking (e.g., every 5 minutes)
+    time.sleep(300)
+```
+
+### Key Points:
+- **Error Handling**: Adding comprehensive error handling is essential for production.
+- **Permissions**: Ensure the script has appropriate permissions for both Snowflake and Azure.
+- **Automation**: You could schedule this script on a serverless function (e.g., Azure Functions) or a VM for regular checks.
+
+This approach provides automated failover if a Snowflake region becomes unavailable, which minimizes downtime and data availability issues.
