@@ -1,0 +1,4 @@
+python -m pip install --upgrade pip
+
+
+curl -o python-latest.exe https://www.python.org/ftp/python/3.x.x/python-3.x.x-amd64.exe
